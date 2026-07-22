@@ -1,0 +1,22 @@
+=== 모델 비교 ===
+LogisticRegression    accuracy=0.7691  macro-F1=0.7246
+LinearSVC             accuracy=0.7794  macro-F1=0.7290
+MultinomialNB         accuracy=0.7237  macro-F1=0.6367
+
+선택된 모델: LinearSVC
+
+=== 분류 리포트 (test 20%) ===
+              precision    recall  f1-score   support
+
+    negative     0.7400    0.6116    0.6697       121
+     neutral     0.8013    0.8889    0.8428       576
+    positive     0.7359    0.6227    0.6746       273
+
+    accuracy                         0.7794       970
+   macro avg     0.7591    0.7077    0.7290       970
+weighted avg     0.7752    0.7794    0.7739       970
+
+=== 혼동 행렬 (행=실제, 열=예측) [neg, neu, pos] ===
+[[ 74  35  12]
+ [ 15 512  49]
+ [ 11  92 170]]

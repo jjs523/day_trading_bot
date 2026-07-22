@@ -1,0 +1,5 @@
+scikit-learn
+pandas
+joblib
+requests
+python-dotenv
