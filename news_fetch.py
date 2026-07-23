@@ -74,7 +74,8 @@ def fetch_news(query: str, language: str = "en", page_size: int = 20,
         "from": from_date,
     }
 
-    # 관련성 높은 순서로 시도하다가 5건 이상 나오면 채택 (없으면 점점 완화)
+    # 관련성 높은 순서로 시도.  '금융매체 우선'으로 먼저 채우고, page_size 에 모자라면
+    # 일반매체로 부족분을 보충(중복 제거)해서 최대한 page_size 만큼 확보한다.
     #  1) 금융매체 + 제목/요약에 회사명       ← 가장 깨끗
     #  2) 제목/요약에 회사명 (전체 매체)
     #  3) 본문까지 포함 (최후)
@@ -84,14 +85,16 @@ def fetch_news(query: str, language: str = "en", page_size: int = 20,
     attempts.append(dict(base, searchIn="title,description"))
     attempts.append(dict(base))
 
-    best = []
+    collected, seen = [], set()
     for params in attempts:
-        arts = _normalize(_query(key, params))
-        if len(arts) >= 5:
-            return arts
-        if len(arts) > len(best):
-            best = arts
-    return best
+        for a in _normalize(_query(key, params)):
+            k = a.get("url") or a.get("title")
+            if k and k not in seen:
+                seen.add(k)
+                collected.append(a)
+        if len(collected) >= page_size:
+            break
+    return collected[:page_size]
 
 
 def _normalize(articles: list[dict]) -> list[dict]:

@@ -1,64 +1,144 @@
-# 감정분류 모델 (ML 파트) — 완료본
+# 뉴스 심리 기반 트레이딩 시나리오 AI
 
-프로젝트: **종목 뉴스 심리 분석 + 트레이딩 시나리오 AI**
-이 폴더는 그중 "직접 학습한 ML 모델" 부분이야. 학습·검증까지 다 끝냈고, 네 컴에선 실행/통합만 하면 돼.
+종목 티커를 넣으면 →  **뉴스 수집 → 감정분류 ML로 심리점수 → 준실시간 시세 → GPT-5.4가 단기 매매 시나리오**를 생성하는 웹앱.
+
+```
+티커(TSLA)
+  │
+  ├─ 뉴스 수집        news_fetch.py   (NewsAPI, 금융매체 우선)
+  ├─ 감정분류 ML      sentiment.py    (FinBERT / 자체 학습 모델, 심리점수 0~100)
+  ├─ 준실시간 시세     price_fetch.py  (yfinance, 약 15분 지연, OHLCV + 환율)
+  └─ 시나리오 생성     main.py         (엘리스 프록시로 GPT-5.4 호출)
+        │
+        └─ 화면        app.py          (Streamlit: 캔들차트 + 심리 + 시나리오)
+```
+
+---
+
+## 실행 방법
+
+```bash
+# 1) 패키지 설치 (venv 안에서)
+pip install -r requirements.txt
+
+# 2) .env 준비  (.env.example 복사 후 키 입력)
+#    NEWSAPI_KEY, ELICE_API_KEY, ELICE_BASE_URL, ELICE_MODEL, SENTIMENT_ENGINE
+
+# 3) 백엔드 실행 (터미널 1)
+uvicorn main:app --reload
+
+# 4) 프런트 실행 (터미널 2)
+streamlit run app.py
+#    → http://localhost:8501
+```
+
+> FinBERT는 첫 실행 때 모델(~440MB)을 자동 다운로드 후 캐시. 이후엔 오프라인도 동작.
+
+---
 
 ## 파일
 
 | 파일 | 설명 |
 |---|---|
-| `train_sentiment.py` | 학습 스크립트 (모델 3개 비교 후 최적 저장) |
-| `sentiment.py` | 추론 모듈 — 트레이딩 봇에 import 해서 쓸 부분 |
-| `sentiment_model.pkl` | 학습된 모델 (내 환경 결과, 참고/백업용) |
-| `metrics.txt` | 발표용 정확도·리포트 |
+| `app.py` | **Streamlit UI** — 캔들차트/거래량/뉴스심리 오버레이, 심리점수, 시나리오 |
+| `main.py` | **FastAPI 백엔드** — 뉴스+심리+시세를 묶어 GPT-5.4 시나리오 생성 |
+| `sentiment.py` | 감정분류 추론 (FinBERT 기본 + 자체 모델 폴백/비교) |
+| `news_fetch.py` | NewsAPI 뉴스 수집 (티커→회사명, 금융매체 필터) |
+| `price_fetch.py` | yfinance 가격/시세/환율 (OHLCV, 1일·1달·3달·1년) |
+| `train_sentiment.py` | 자체 감정분류 모델 학습 스크립트 |
+| `sentiment_model.pkl` | 학습된 자체 모델 (TF-IDF + LinearSVC) |
+| `run_pipeline.py` | CLI 데모 (`--mock` 오프라인 테스트 지원) |
+| `metrics.txt` | 자체 모델 정확도·리포트 |
 | `data/Sentences_*.txt` | Financial PhraseBank 원본 (오프라인 학습용) |
 
-## 결과 (발표용 숫자)
+---
 
-- 데이터: Financial PhraseBank 50%합의 세트, 영어 금융뉴스 4,846문장 (중립 2879 / 긍정 1363 / 부정 604)
-- 방식: **TF-IDF(단어 1~2gram + 문자 3~5gram) → 로지스틱회귀 / 선형SVM / 나이브베이즈 비교**
-- **최종 선택: LinearSVC — 정확도 77.9%, macro-F1 0.729** (test 20%)
-- 한계(정직하게): 중립 데이터가 많아 **중립 편향** 존재 → 소수 클래스(부정) recall이 낮음. 경량·고속이 장점, 정밀도는 BERT 계열이 우위. → "왜 딥러닝 안 썼나" 질문 대비 논점으로 활용.
+## 주요 기능
 
-## 네 컴에서 할 일
+### 1. 가격 차트 (app.py)
+- **캔들스틱** (상승 초록 / 하락 빨강) + **거래량 막대** + **전일 종가 기준선**
+- 기간 탭: **1일 / 1달 / 3달 / 1년**, 전일대비 등락 표시
+- **뉴스 심리 오버레이**: 각 뉴스를 발행일·가격 위에 감정별 마커(▲긍정 ▼부정 ●중립)로 표시
+- **원화 병기**: 달러 가격에 환율(USD/KRW) 적용한 원화 표시
+- 조작: 드래그=이동 · 스크롤=확대/축소 · 더블클릭=원상복구
 
+### 2. 감정분류 — 두 엔진 (sentiment.py)
+`SENTIMENT_ENGINE` 환경변수로 전환 (`finbert` 기본 | `sklearn`).
+
+| 엔진 | 설명 | 정확도 |
+|---|---|---|
+| **FinBERT** | 금융 특화 사전학습 BERT (ProsusAI/finbert) | 약 88~90% |
+| **자체 학습 모델** | TF-IDF(단어+문자 n-gram) + LinearSVC — **직접 학습** | 77.9% |
+
+- `analyze_news(texts)` → 종합 심리점수(0~100) + 분포 + 개별결과 + 엔진정보
+- 심리점수 = 각 뉴스의 `P(긍정) - P(부정)` 평균을 0~100으로 변환 (50=중립)
+
+### 3. 준실시간 시세 → 시나리오 (price_fetch.py, main.py)
+- yfinance로 현재가·당일 고저·전일종가 조회 (**약 15분 지연**, 무료)
+- 이 실제 가격을 프롬프트에 주입 → 시나리오가 구체적 진입가·목표가·손절가를 **실제 숫자**로 제시
+- 완전 실시간은 유료 피드(Polygon/Alpaca 등) 필요
+
+---
+
+## 자체 학습 모델 상세 (발표용)
+
+- **데이터**: Financial PhraseBank (Malo et al., 2014), 영어 금융뉴스. `Sentences_50Agree.txt` 4,846문장 (중립 2879 / 긍정 1363 / 부정 604)
+- **방식**: TF-IDF(단어 1~2gram + 문자 3~5gram) → 로지스틱회귀 / 선형SVM / 나이브베이즈 비교 → **LinearSVC 선택** (정확도 77.9%, macro-F1 0.729)
+
+### 데이터 동의율별 정확도 (같은 파이프라인, DATA_FILE만 변경)
+
+| 데이터셋 | 문장수 | 정확도 | macro-F1 |
+|---|---|---|---|
+| 50Agree (기본) | 4,846 | 77.9% | 0.729 |
+| 66Agree | 4,217 | 81.9% | 0.772 |
+| 75Agree | 3,453 | 86.8% | 0.817 |
+| AllAgree (만장일치) | 2,264 | 92.1% | 0.888 |
+
+> 50Agree는 주석자 절반만 동의한 **가장 노이즈 많은** 세트라 상한이 낮음. 동의율이 높을수록(라벨이 깨끗) 정확도가 오름. → "왜 77%냐" 질문에 데이터 품질 관점으로 답할 수 있음.
+>
+> **한계(정직하게)**: 중립 데이터가 많아 중립 편향 존재, 소수 클래스(부정) recall이 낮음. 경량·고속이 장점. 정밀도는 BERT 계열이 우위 → 그래서 앱 기본 엔진은 FinBERT, 자체 모델은 비교·폴백용.
+
+### 자체 모델 재학습
 ```bash
-# 1) 패키지 (venv 안에서)
-pip install scikit-learn pandas joblib
-
-# 2) 모델 학습 (약 30초, 네 환경 sklearn 버전에 맞는 pkl 새로 생성 — 권장)
-python train_sentiment.py
-
-# 3) 추론 테스트
-python sentiment.py
+python train_sentiment.py     # 약 30초, 네 환경 sklearn 버전에 맞는 pkl 새로 생성
+python sentiment.py           # 추론 테스트
 ```
 
-> ⚠️ 동봉한 `sentiment_model.pkl`은 내 환경(sklearn 1.8.0)에서 만든 거라, 네 sklearn 버전이 다르면 로드 경고가 날 수 있어. **train_sentiment.py를 한 번 돌려서 네 환경 pkl을 새로 뽑는 걸 추천.** 데이터 원본이 `data/`에 있어서 인터넷 없이도 학습돼.
+---
 
-## 트레이딩 봇과 통합 (다음 단계)
+## API 엔드포인트 (main.py)
 
-`sentiment.py`의 `analyze_news()`가 종합 심리 점수(0~100)를 주니까, 이걸 기존 봇 프롬프트에 주입하면 돼:
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/` | 헬스체크 (사용 모델 반환) |
+| POST | `/analyze` | 심리분석만 (미리보기용) |
+| GET | `/price/{ticker}?period=1달` | 가격 차트 데이터 (OHLCV + 전일대비 + 환율) |
+| GET | `/quote/{ticker}` | 준실시간 시세 (현재가·당일고저·전일종가·환율) |
+| POST | `/generate` | 뉴스심리 + 시세 + 조건 → GPT-5.4 시나리오 |
 
-```python
-from sentiment import analyze_news
+---
 
-news = [...]                      # NewsAPI로 받은 종목 뉴스 제목/요약 리스트
-s = analyze_news(news)
-# s["sentiment_score"] -> 예: 58.6,  s["verdict"] -> "중립/혼조",  s["counts"], s["items"]
+## 환경변수 (.env)
 
-prompt = f"""
-종목 뉴스 심리 분석 결과: 심리점수 {s['sentiment_score']}/100 ({s['verdict']}),
-분포 {s['counts']}. 시드머니 {seed}, 목표수익 {target}.
-위 뉴스 심리를 반영해 진입/청산 관점의 트레이딩 시나리오를 제시해줘.
-"""
-# 이 prompt를 기존 GPT-5 mini 호출부에 넣으면 끝
+```ini
+NEWSAPI_KEY=...            # newsapi.org 무료키
+ELICE_API_KEY=...          # 엘리스 AI 클라우드 (OpenAI 호환 프록시)
+ELICE_BASE_URL=...
+ELICE_MODEL=openai/gpt-5.4
+SENTIMENT_ENGINE=finbert   # finbert(기본) | sklearn(자체 모델)
 ```
 
-## 남은 로드맵
+> `.env` 는 `.gitignore` 에 등록되어 깃허브에 올라가지 않음.
 
-1. ✅ 감정분류 모델 학습 — **완료**
-2. ⬜ NewsAPI로 종목 뉴스 수집 (newsapi.org 무료키, 미국주식)
-3. ⬜ `analyze_news()`를 FastAPI에 연결
-4. ⬜ 심리 점수를 트레이딩 봇 프롬프트에 주입
-5. ⬜ Streamlit UI (심리 그래프 + 시나리오)
+---
+
+## 로드맵
+
+1. ✅ 감정분류 모델 학습 (자체 + FinBERT)
+2. ✅ NewsAPI 뉴스 수집
+3. ✅ FastAPI 백엔드 (`analyze_news` 연결)
+4. ✅ 심리 점수 + 준실시간 시세를 트레이딩 봇 프롬프트에 주입
+5. ✅ Streamlit UI (캔들차트 + 심리 오버레이 + 시나리오)
 6. ⬜ 발표 리허설 (7.24)
+
+> ⚠️ 교육·시뮬레이션 목적의 예시이며 실제 투자 조언이 아님.

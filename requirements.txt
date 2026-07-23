@@ -3,3 +3,11 @@ pandas
 joblib
 requests
 python-dotenv
+fastapi
+uvicorn
+openai
+streamlit
+plotly
+yfinance
+torch==2.4.1
+transformers==4.48.3
