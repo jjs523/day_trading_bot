@@ -5,18 +5,20 @@ WORKDIR /app
 # 로그가 즉시 보이도록 (print 버퍼링 끄기)
 ENV PYTHONUNBUFFERED=1
 
-# (모델 유형에서 시스템 라이브러리가 필요하면 여기서 설치)
-# RUN apt-get update && apt-get install -y --no-install-recommends libgl1 && rm -rf /var/lib/apt/lists/*
+# 배포는 512MB 무료 인스턴스에 맞춰 '가벼운 자체 학습 sklearn 모델'만 사용한다.
+# (FinBERT/torch/transformers는 RAM 초과로 OOM → 배포판에서 제외)
+ENV SENTIMENT_ENGINE=sklearn
 
 COPY requirements.txt .
-# PyTorch CPU 버전을 공식 링크에서 가볍게 먼저 설치
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-# 나머지 패키지 설치
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# 배포 환경의 sklearn 버전에 맞춰 감정분류 모델을 새로 학습(버전 불일치 방지, 약 30초).
+# 실패하면 저장소에 커밋된 sentiment_model.pkl 을 그대로 사용.
+RUN python train_sentiment.py || echo "학습 실패 - 커밋된 pkl 사용"
+
 RUN chmod +x start.sh
 
 EXPOSE 7860
 CMD ["bash", "start.sh"]
-
