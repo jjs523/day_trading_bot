@@ -12,7 +12,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
-API_URL = "http://127.0.0.1:8000"
+# 기존 코드
+# API_URL = "http://127.0.0.1:8000"
+
+# 수정할 코드
+API_URL = st.secrets.get("SERVER_BASE", "http://127.0.0.1:8000")
+
 PERIOD_LABELS = ["1일", "1주", "1달", "3달", "1년"]
 
 # 목표 기간 프리셋 -> 일수
