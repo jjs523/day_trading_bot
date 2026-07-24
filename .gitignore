@@ -3,5 +3,4 @@
 __pycache__/
 *.pyc
 venv/
-sentiment_model.pkl
 "@ | Out-File -FilePath .gitignore -Encoding utf8
