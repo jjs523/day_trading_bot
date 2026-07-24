@@ -87,13 +87,17 @@ def _pack(text: str, label: str, probs: dict) -> dict:
 
 @lru_cache(maxsize=1)
 def _active_engine() -> str:
-    """실제로 쓸 엔진 결정. finbert 선택인데 로드 실패하면 sklearn 폴백."""
+    """실제로 쓸 엔진 결정. finbert 선택인데 사용 불가하면 sklearn 으로 자동 전환."""
     if ENGINE == "finbert":
         try:
             _finbert()
             return "finbert"
+        except ImportError:
+            # 배포 등 transformers/torch 미설치 환경 → 의도된 자체 모델 사용 (에러 아님)
+            print("[정보] transformers 미설치 환경 → 자체 학습 sklearn 모델 사용")
+            return "sklearn"
         except Exception as e:
-            print(f"[FinBERT 로드 실패 -> 자체 모델로 폴백] {e}")
+            print(f"[알림] FinBERT 사용 불가 → 자체 sklearn 모델 사용 ({e})")
             return "sklearn"
     return "sklearn"
 
